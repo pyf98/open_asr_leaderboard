@@ -10,19 +10,21 @@ from tqdm import tqdm
 wer_metric = evaluate.load("wer")
 
 def main(args):
-    # Load model (FILL ME!)
-    load_args = {}
+    # Load model
+    device = "cpu" if args.device == -1 else f"cuda:{args.device}"
+    load_args = {
+        "device": device,
+        "dtype": "float32",
+        "use_flash_attn": True,
+        "lang_sym": "<eng>",
+        "task_sym": "<asr>",
+    }
     if os.path.exists(args.model_id):
         load_args["s2t_model_file"] = args.model_id
     else:
         load_args["model_tag"] = args.model_id
-    model = Speech2TextGreedySearch.from_pretrained(
-        **load_args,
-        device="cpu" if args.device == -1 else f"cuda:{args.device}",
-        use_flash_attn=True,
-        lang_sym='<eng>',
-        task_sym='<asr>',
-    )
+
+    model = Speech2TextGreedySearch.from_pretrained(**load_args)
 
     def benchmark(batch):
         # Load audio inputs
@@ -33,11 +35,8 @@ def main(args):
         # Start timing
         start_time = time.time()
 
-        # INFERENCE (FILL ME! Replacing 1-3 with steps from your library)
-        with torch.autocast(
-            device_type="cpu" if args.device == -1 else f"cuda:{args.device}",
-            dtype=torch.bfloat16,
-        ):
+        # INFERENCE
+        with torch.autocast(device, torch.bfloat16, enabled=True), torch.inference_mode():
             pred_text = model.batch_decode(
                 audios,
                 batch_size=args.batch_size,
@@ -122,7 +121,7 @@ if __name__ == "__main__":
         "--model_id",
         type=str,
         required=True,
-        help="Model identifier. Should be loadable with 🤗 Transformers",
+        help="Model identifier. Should be loadable with ESPnet",
     )
     parser.add_argument(
         "--dataset_path",

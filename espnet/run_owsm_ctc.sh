@@ -2,9 +2,8 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-# MODEL_IDs=("exp/s2t_train_owsmctc_ebf27_conv2d8_size1024_mel128_bs320_raw_bpe50000/valid.total_count.ave_5best.till40epoch.pth")
-MODEL_IDs=("espnet/owsm_ctc_v3.1_1B" "espnet/owsm_ctc_v3.2_ft_1B")
-BATCH_SIZE=192
+MODEL_IDs=("espnet/owsm_ctc_v4_1B" "espnet/owsm_ctc_v3.1_1B" "espnet/owsm_ctc_v3.2_ft_1B")
+BATCH_SIZE=200
 
 num_models=${#MODEL_IDs[@]}
 

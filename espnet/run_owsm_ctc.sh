@@ -3,7 +3,7 @@
 export PYTHONPATH="..":$PYTHONPATH
 
 MODEL_IDs=("espnet/owsm_ctc_v4_1B" "espnet/owsm_ctc_v3.1_1B" "espnet/owsm_ctc_v3.2_ft_1B")
-BATCH_SIZE=200
+BATCH_SIZE=144
 
 num_models=${#MODEL_IDs[@]}
 
@@ -18,7 +18,8 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -27,7 +28,8 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -36,7 +38,8 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -45,7 +48,8 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -54,7 +58,8 @@ do
         --split="test.clean" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -63,7 +68,8 @@ do
         --split="test.other" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -72,7 +78,8 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -81,7 +88,8 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --max_eval_samples=-1 \
+        --no-streaming
 
     # Evaluate results
     RUNDIR=`pwd` && \

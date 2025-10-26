@@ -2,14 +2,25 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("usefulsensors/moonshine-base" "usefulsensors/moonshine-tiny")
-BATCH_SIZE=64
+MODEL_IDs=(
+    "ibm-granite/granite-speech-3.3-2b" 
+    "ibm-granite/granite-speech-3.3-8b"
+)
+
+BATCH_SIZEs=(
+    160 
+    64
+)
+
+NUM_BEAMS=1
+MAX_NEW_TOKENS=200
 
 num_models=${#MODEL_IDs[@]}
 
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
+    BATCH_SIZE=${BATCH_SIZEs[$i]}
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -18,8 +29,10 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
-
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} 
+        
     python run_eval.py \
         --model_id=${MODEL_ID} \
         --dataset_path="hf-audio/esb-datasets-test-only-sorted" \
@@ -27,7 +40,9 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -36,7 +51,9 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -45,7 +62,9 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -54,7 +73,9 @@ do
         --split="test.clean" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} 
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -63,7 +84,9 @@ do
         --split="test.other" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS}
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -72,7 +95,9 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS}
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -81,7 +106,9 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} 
 
     # Evaluate results
     RUNDIR=`pwd` && \

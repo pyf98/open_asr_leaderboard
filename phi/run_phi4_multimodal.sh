@@ -2,10 +2,13 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("usefulsensors/moonshine-base" "usefulsensors/moonshine-tiny")
-BATCH_SIZE=64
+MODEL_IDs=("microsoft/Phi-4-multimodal-instruct")
+BATCH_SIZE=160
+NUM_BEAMS=1
+MAX_NEW_TOKENS=128
 
 num_models=${#MODEL_IDs[@]}
+default_user_prompt="Transcribe the audio clip into text."
 
 for (( i=0; i<${num_models}; i++ ));
 do
@@ -17,8 +20,11 @@ do
         --dataset="voxpopuli" \
         --split="test" \
         --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --batch_size=$((5 * BATCH_SIZE / 10)) \
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -27,7 +33,10 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -36,7 +45,10 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="Transcribe the audio clip to English text."
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -44,8 +56,11 @@ do
         --dataset="gigaspeech" \
         --split="test" \
         --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --batch_size=$((9 * BATCH_SIZE / 10)) \
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -54,7 +69,10 @@ do
         --split="test.clean" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -63,7 +81,10 @@ do
         --split="test.other" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -71,8 +92,11 @@ do
         --dataset="spgispeech" \
         --split="test" \
         --device=0 \
-        --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --batch_size=$((9 * BATCH_SIZE / 10)) \
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     python run_eval.py \
         --model_id=${MODEL_ID} \
@@ -81,7 +105,10 @@ do
         --split="test" \
         --device=0 \
         --batch_size=${BATCH_SIZE} \
-        --max_eval_samples=-1
+        --num_beams=${NUM_BEAMS} \
+        --max_eval_samples=-1 \
+        --max_new_tokens=${MAX_NEW_TOKENS} \
+        --user_prompt="${default_user_prompt}"
 
     # Evaluate results
     RUNDIR=`pwd` && \

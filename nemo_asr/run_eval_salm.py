@@ -1,13 +1,11 @@
 import argparse
 
-<<<<<<< HEAD
-=======
 import io
->>>>>>> pyf98/main
 import os
 import torch
 import evaluate
 import soundfile
+import lhotse
 
 from tqdm import tqdm
 from normalizer import data_utils
@@ -17,7 +15,64 @@ from nemo.collections.asr.models import ASRModel
 import time
 
 
+from nemo.collections.speechlm2.models.salm import SALM
+from omegaconf import OmegaConf
+from pathlib import Path
+from transformers import GenerationConfig
+
+
+
 wer_metric = evaluate.load("wer")
+
+
+class ToAudio(torch.utils.data.Dataset):
+    def __getitem__(self, cuts):
+        cuts = lhotse.CutSet([c.to_mono(mono_downmix=True) if isinstance(c, lhotse.MultiCut) else c for c in cuts])
+        audios, audio_lens = cuts.load_audio(collate=True)
+        return {"cuts": cuts, "audios": audios, "audio_lens": audio_lens}
+
+
+def setup_dloader(audio_files, batch_size, num_workers):
+    cuts = lhotse.CutSet([lhotse.Recording.from_file(p).to_cut() for p in audio_files])
+    cuts = cuts.resample(16000)
+    return torch.utils.data.DataLoader(
+        dataset=ToAudio(),
+        sampler=lhotse.dataset.DynamicCutSampler(cuts, max_cuts=batch_size),
+        num_workers=num_workers,
+        batch_size=None,
+    )
+
+
+def transcribe(model, dloader) -> list[str]:
+    hyps = []
+    eos_tokens = torch.tensor([model.text_eos_id])
+    for batch_idx, batch in enumerate(dloader):
+        answer_ids = model.generate(
+            prompts=[
+                [
+                    {"role": "user", "slots": {"message": f"Transcribe the following: {model.audio_locator_tag}"}}
+                ]
+            ] * len(batch["cuts"]),
+            audios=batch["audios"].to(model.device, non_blocking=True),
+            audio_lens=batch["audio_lens"].to(model.device, non_blocking=True),
+            generation_config=GenerationConfig(
+                max_new_tokens=128,
+                bos_token_id=model.text_bos_id,
+                eos_token_id=eos_tokens,
+                pad_token_id=model.text_pad_id,
+            ),
+        )
+        answer_ids = [parse_hyp(ans, eos_tokens) for ans in answer_ids.cpu()]
+        hyps.extend(model.tokenizer.ids_to_text(ans).strip() for ans in answer_ids)
+    return hyps
+
+
+def parse_hyp(answer: torch.Tensor, eos_tokens):
+    end = (answer == torch.isin(answer, eos_tokens)).nonzero(as_tuple=True)[0]
+    if end.numel() == 0:
+        return answer
+    end = end[0]
+    return answer[:end]
 
 
 def main(args):
@@ -30,21 +85,10 @@ def main(args):
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR)
 
-    if args.device >= 0:
-        device = torch.device(f"cuda:{args.device}")
-        compute_dtype=torch.bfloat16
-    else:
-        device = torch.device("cpu")
-        compute_dtype=torch.float32
-        
+    torch.set_float32_matmul_precision("medium")
 
-    if args.model_id.endswith(".nemo"):
-        asr_model = ASRModel.restore_from(args.model_id, map_location=device)
-    else:
-        asr_model = ASRModel.from_pretrained(args.model_id, map_location=device)  # type: ASRModel
-    
-    asr_model.to(compute_dtype)
-    asr_model.eval()
+    device = torch.device(f"cuda:{args.device}")
+    model = SALM.from_pretrained(args.model_id).eval().to(torch.bfloat16).to(device)
 
     dataset = data_utils.load_data(args)
 
@@ -55,14 +99,6 @@ def main(args):
         durations = []
 
         for id, sample in zip(batch["id"], batch["audio"]):
-<<<<<<< HEAD
-            audio_path = os.path.join(CACHE_DIR, f"{id}.wav")
-            if not os.path.exists(audio_path):
-                os.makedirs(os.path.dirname(audio_path), exist_ok=True)
-                soundfile.write(audio_path, np.float32(sample["array"]), 16_000)
-            audio_paths.append(audio_path)
-            durations.append(len(sample["array"]) / 16_000)
-=======
 
             # first step added here to make ID and wav filenames unique
             # several datasets like earnings22 have a hierarchical structure
@@ -90,9 +126,8 @@ def main(args):
 
             audio_paths.append(audio_path)
             durations.append(len(audio_array) / sample_rate)
->>>>>>> pyf98/main
 
-        
+
         batch["references"] = batch["norm_text"]
         batch["audio_filepaths"] = audio_paths
         batch["durations"] = durations
@@ -105,10 +140,7 @@ def main(args):
         dataset = dataset.take(args.max_eval_samples)
 
     dataset = data_utils.prepare_data(dataset)
-    if asr_model.cfg.decoding.strategy != "beam":
-        asr_model.cfg.decoding.strategy = "greedy_batch"
-        asr_model.change_decoding_strategy(asr_model.cfg.decoding)
-    
+
     # prepraing the offline dataset
     dataset = dataset.map(download_audio_files, batch_size=args.batch_size, batched=True, remove_columns=["audio"])
 
@@ -124,39 +156,25 @@ def main(args):
     for data in tqdm(data_itr, desc="Downloading Samples"):
         for key in all_data:
             all_data[key].append(data[key])
-    
+
     # Sort audio_filepaths and references based on durations values
     sorted_indices = sorted(range(len(all_data["durations"])), key=lambda k: all_data["durations"][k], reverse=True)
     all_data["audio_filepaths"] = [all_data["audio_filepaths"][i] for i in sorted_indices]
     all_data["references"] = [all_data["references"][i] for i in sorted_indices]
     all_data["durations"] = [all_data["durations"][i] for i in sorted_indices]
-    
-    
+
+
     total_time = 0
     for _ in range(2): # warmup once and calculate rtf
         if _ == 0:
             audio_files = all_data["audio_filepaths"][:args.batch_size * 4] # warmup with 4 batches
         else:
             audio_files = all_data["audio_filepaths"]
-        start_time = time.time()
-<<<<<<< HEAD
-        with torch.cuda.amp.autocast(enabled=False, dtype=compute_dtype), torch.inference_mode(), torch.no_grad():
-            if 'canary' in args.model_id:
-                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc='no', num_workers=1)
-=======
-        with torch.inference_mode(), torch.no_grad(): 
-
-            if 'canary' in args.model_id and 'v2' not in args.model_id:
-                pnc = 'nopnc'
-            else:
-                pnc = 'pnc'
-                
-            if 'canary' in args.model_id:
-                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, pnc=pnc, num_workers=1)
->>>>>>> pyf98/main
-            else:
-                transcriptions = asr_model.transcribe(audio_files, batch_size=args.batch_size, verbose=False, num_workers=1)
-        end_time = time.time()
+        dloader = setup_dloader(audio_files=audio_files, batch_size=args.batch_size, num_workers=1)
+        with torch.inference_mode():
+            start_time = time.time()
+            transcriptions = transcribe(model, dloader)
+            end_time = time.time()
         if _ == 1:
             total_time += end_time - start_time
     total_time = total_time
@@ -164,11 +182,7 @@ def main(args):
     # normalize transcriptions with English normalizer
     if isinstance(transcriptions, tuple) and len(transcriptions) == 2:
         transcriptions = transcriptions[0]
-<<<<<<< HEAD
     predictions = [data_utils.normalizer(pred) for pred in transcriptions]
-=======
-    predictions = [data_utils.normalizer(pred.text) for pred in transcriptions]
->>>>>>> pyf98/main
 
     avg_time = total_time / len(all_data["audio_filepaths"])
 
@@ -189,7 +203,6 @@ def main(args):
     wer = wer_metric.compute(references=all_data['references'], predictions=predictions)
     wer = round(100 * wer, 2)
 
-    # transcription_time = sum(all_results["transcription_time"])
     audio_length = sum(all_data["durations"])
     rtfx = audio_length / total_time
     rtfx = round(rtfx, 2)

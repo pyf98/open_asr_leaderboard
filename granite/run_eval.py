@@ -1,127 +1,87 @@
-"""Script to evaluate a pretrained SpeechBrain model from the 🤗 Hub.
-
-Authors
-* Adel Moumen 2023 <adel.moumen@univ-avignon.fr>
-* Sanchit Gandhi 2024 <sanchit@huggingface.co>
-"""
 import argparse
-import time
-
+import os
+import torch
+from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, models
 import evaluate
 from normalizer import data_utils
+import time
 from tqdm import tqdm
-import torch
-import speechbrain.inference.ASR as ASR
-from speechbrain.utils.data_utils import batch_pad_right
-import os
 
-def get_model(
-    speechbrain_repository: str,
-    speechbrain_pretrained_class_name: str,
-    beam_size: int,
-    ctc_weight_decode: float,
-    **kwargs,
-):
-    """Fetch a pretrained SpeechBrain model from the SpeechBrain 🤗 Hub.
+# ensure installed transformers supports granite_speech
+assert hasattr(models, "granite_speech")
 
-    Arguments
-    ---------
-    speechbrain_repository : str
-        The name of the SpeechBrain repository to fetch the pretrained model from. E.g. `asr-crdnn-rnnlm-librispeech`.
-    speechbrain_pretrained_class_name : str
-        The name of the SpeechBrain pretrained class to fetch. E.g. `EncoderASR`.
-        See: https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/pretrained/interfaces.py
-    beam_size : int
-        Size of the beam for decoding.
-    ctc_weight_decode : float
-        Weight of the CTC prob for decoding with joint CTC/Attn.
-    **kwargs
-        Additional keyword arguments to pass to override the default run options of the pretrained model.
-
-    Returns
-    -------
-    SpeechBrain pretrained model
-        The Pretrained model.
-
-    Example
-    -------
-    >>> from open_asr_leaderboard.speechbrain.run_eval import get_model
-    >>> model = get_model("asr-crdnn-rnnlm-librispeech", "EncoderASR", device="cuda:0")
-    """
-
-    run_opt_defaults = {
-        "device": "cuda",
-        "data_parallel_count": -1,
-        "data_parallel_backend": False,
-        "distributed_launch": False,
-        "distributed_backend": "nccl",
-        "jit_module_keys": None,
-        "precision": "fp16",
-    }
-
-    run_opts = {**run_opt_defaults}
-
-    overrides = {}
-    if beam_size:
-        overrides["test_beam_size"] = beam_size
-    
-    if ctc_weight_decode == 0.0:
-        overrides["scorer"] = None
-    overrides["ctc_weight_decode"] = ctc_weight_decode
-
-    kwargs = {
-        "source": f"{speechbrain_repository}",
-        "savedir": f"pretrained_models/{speechbrain_repository}",
-        "run_opts": run_opts,
-        "overrides": overrides,
-    }
-
-    try:
-        model_class = getattr(ASR, speechbrain_pretrained_class_name)
-    except AttributeError:
-        raise AttributeError(
-            f"SpeechBrain Pretrained class: {speechbrain_pretrained_class_name} not found in pretrained.py"
-        )
-    
-    return model_class.from_hparams(**kwargs)
-
+wer_metric = evaluate.load("wer")
+torch.set_float32_matmul_precision('high')
 
 def main(args):
-    """Run the evaluation script."""
-    if args.device == -1:
-        device = "cpu"
-    else:
-        device = f"cuda:{args.device}"
+    processor = AutoProcessor.from_pretrained(args.model_id)
+    tokenizer = processor.tokenizer
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(args.model_id, torch_dtype=torch.bfloat16).to(args.device)
 
-    model = get_model(
-        args.source, 
-        args.speechbrain_pretrained_class_name, 
-        args.beam_size,
-        args.ctc_weight_decode, 
-        device=device
+    # create text prompt
+    chat = [
+        {
+            "role": "system",
+            "content": "Knowledge Cutoff Date: April 2024.\nToday's Date: December 19, 2024.\nYou are Granite, developed by IBM. You are a helpful AI assistant",
+        },
+        {
+            "role": "user",
+            "content": "<|audio|>can you transcribe the speech into a written format?",
+        }
+    ]
+
+    text = tokenizer.apply_chat_template(
+        chat, tokenize=False, add_generation_prompt=True
     )
 
-    def benchmark(batch):
-        # Load audio inputs
-        audios = [torch.from_numpy(sample["array"]) for sample in batch["audio"]]
-        minibatch_size = len(audios)
+    gen_kwargs = {"max_new_tokens": args.max_new_tokens, "num_beams": args.num_beams}
 
-        audios, audio_lens = batch_pad_right(audios)
-        audios = audios.to(device)
-        audio_lens = audio_lens.to(device)
-        
+    def benchmark(batch, min_new_tokens=None):
+        # Load audio inputs
+        audios = [audio["array"] for audio in batch["audio"]]
+        minibatch_size = len(audios)
+        texts=[text] * minibatch_size
+
+        # START TIMING
         start_time = time.time()
-        with torch.autocast(device_type="cuda"):
-            predictions, _ = model.transcribe_batch(audios, audio_lens)
+
+        # with torch.autocast(model.device.type, enabled=True):
+        model_inputs = processor(
+            texts,
+            audios,
+            device=args.device, # Computation device; returned tensors are put on CPU
+            return_tensors="pt",
+        ).to(args.device)
+
+        # Model Inference
+        model_outputs = model.generate(
+            **model_inputs,
+            bos_token_id=tokenizer.bos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            repetition_penalty=1.0,
+            **gen_kwargs,
+            min_new_tokens=min_new_tokens,
+        )
+
+        # Transformers includes the input IDs in the response.
+        num_input_tokens = model_inputs["input_ids"].shape[-1]
+        new_tokens = model_outputs[:, num_input_tokens:]
+        
+        output_text = tokenizer.batch_decode(
+            new_tokens, add_special_tokens=False, skip_special_tokens=True
+        )
+
+        # END TIMING
         runtime = time.time() - start_time
 
+        # normalize by minibatch size since we want the per-sample time
         batch["transcription_time_s"] = minibatch_size * [runtime / minibatch_size]
 
         # normalize transcriptions with English normalizer
-        batch["predictions"] = [data_utils.normalizer(pred) for pred in predictions]
+        batch["predictions"] = [data_utils.normalizer(pred) for pred in output_text]
         batch["references"] = batch["norm_text"]
         return batch
-
 
     if args.warmup_steps is not None:
         dataset = data_utils.load_data(args)
@@ -132,7 +92,7 @@ def main(args):
             warmup_dataset = dataset.take(num_warmup_samples)
         else:
             warmup_dataset = dataset.select(range(min(num_warmup_samples, len(dataset))))
-        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True))
+        warmup_dataset = iter(warmup_dataset.map(benchmark, batch_size=args.batch_size, batched=True, fn_kwargs={"min_new_tokens": args.max_new_tokens}))
 
         for _ in tqdm(warmup_dataset, desc="Warming up..."):
             continue
@@ -165,7 +125,7 @@ def main(args):
     manifest_path = data_utils.write_manifest(
         all_results["references"],
         all_results["predictions"],
-        args.source,
+        args.model_id,
         args.dataset_path,
         args.dataset,
         args.split,
@@ -174,7 +134,6 @@ def main(args):
     )
     print("Results saved at path:", os.path.abspath(manifest_path))
 
-    wer_metric = evaluate.load("wer")
     wer = wer_metric.compute(
         references=all_results["references"], predictions=all_results["predictions"]
     )
@@ -187,23 +146,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--source",
+        "--model_id",
         type=str,
         required=True,
-        help="SpeechBrain model repository. E.g. `asr-crdnn-rnnlm-librispeech`",
+        help="Model identifier. Should be loadable with 🤗 Transformers",
     )
-
-    parser.add_argument(
-        "--speechbrain_pretrained_class_name",
-        type=str,
-        required=True,
-        help="SpeechBrain pretrained class name. E.g. `EncoderASR`",
-    )
-
     parser.add_argument(
         "--dataset_path",
         type=str,
-        default="hf-audio/esb-datasets-test-only-sorted",
+        default="esb/datasets",
         help="Dataset path. By default, it is `esb/datasets`",
     )
     parser.add_argument(
@@ -232,6 +183,12 @@ if __name__ == "__main__":
         help="Number of samples to go through each streamed batch.",
     )
     parser.add_argument(
+        "--num_beams",
+        type=int,
+        default=1,
+        help="Number of beams for beam search.",
+    )
+    parser.add_argument(
         "--max_eval_samples",
         type=int,
         default=None,
@@ -244,24 +201,19 @@ if __name__ == "__main__":
         help="Choose whether you'd like to download the entire dataset or stream it during the evaluation.",
     )
     parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=None,
+        help="Maximum number of tokens to generate (for auto-regressive models).",
+    )
+    parser.add_argument(
         "--warmup_steps",
         type=int,
         default=2,
         help="Number of warm-up steps to run before launching the timed runs.",
     )
-    parser.add_argument(
-        "--beam_size",
-        type=int,
-        default=None,
-        help="Beam size for decoding"
-    )
-    parser.add_argument(
-        "--ctc_weight_decode",
-        type=float,
-        default=0.3,
-        help="Weight of CTC for joint CTC/Att. decoding"
-    )
+    
     args = parser.parse_args()
-    parser.set_defaults(streaming=True)
+    parser.set_defaults(streaming=False)
 
     main(args)

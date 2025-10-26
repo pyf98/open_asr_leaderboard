@@ -2,11 +2,10 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
-MODEL_IDs=("usefulsensors/moonshine-base" "usefulsensors/moonshine-tiny")
+MODEL_IDs=("kyutai/stt-2.6b-en")
 BATCH_SIZE=64
 
 num_models=${#MODEL_IDs[@]}
-
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
@@ -82,6 +81,7 @@ do
         --device=0 \
         --batch_size=${BATCH_SIZE} \
         --max_eval_samples=-1
+
 
     # Evaluate results
     RUNDIR=`pwd` && \

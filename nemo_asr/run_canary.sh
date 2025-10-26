@@ -2,8 +2,13 @@
 
 export PYTHONPATH="..":$PYTHONPATH
 
+<<<<<<< HEAD
 MODEL_IDs=("nvidia/canary-1b")
 BATCH_SIZE=64
+=======
+MODEL_IDs=("nvidia/canary-1b-v2")  # options: "nvidia/canary-1b" "nvidia/canary-1b-flash" "nvidia/canary-180m-flash" "nvidia/canary-1b-v2"
+BATCH_SIZE=128
+>>>>>>> pyf98/main
 DEVICE_ID=0
 
 num_models=${#MODEL_IDs[@]}
@@ -11,7 +16,10 @@ num_models=${#MODEL_IDs[@]}
 for (( i=0; i<${num_models}; i++ ));
 do
     MODEL_ID=${MODEL_IDs[$i]}
+<<<<<<< HEAD
 
+=======
+>>>>>>> pyf98/main
     
     python run_eval.py \
         --model_id=${MODEL_ID} \

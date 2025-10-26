@@ -1,5 +1,9 @@
 from datasets import load_dataset, Audio
+<<<<<<< HEAD
 from normalizer import EnglishTextNormalizer
+=======
+from normalizer import EnglishTextNormalizer, BasicMultilingualTextNormalizer
+>>>>>>> pyf98/main
 
 from .eval_utils import read_manifest, write_manifest
 
@@ -30,6 +34,11 @@ def get_text(sample):
 
 normalizer = EnglishTextNormalizer()
 
+<<<<<<< HEAD
+=======
+ml_normalizer = BasicMultilingualTextNormalizer()
+
+>>>>>>> pyf98/main
 
 def normalize(batch):
     batch["original_text"] = get_text(batch)
